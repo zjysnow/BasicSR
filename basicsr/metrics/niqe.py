@@ -5,6 +5,7 @@ from scipy.ndimage.filters import convolve
 from scipy.special import gamma
 
 from basicsr.metrics.metric_util import reorder_image, to_y_channel
+from basicsr.utils.matlab_functions import imresize
 
 
 def estimate_aggd_param(block):
@@ -128,13 +129,8 @@ def niqe(img,
                 feat.append(compute_feature(block))
 
         distparam.append(np.array(feat))
-        # TODO: matlab bicubic downsample with anti-aliasing
-        # for simplicity, now we use opencv instead, which will result in
-        # a slight difference.
         if scale == 1:
-            h, w = img.shape
-            img = cv2.resize(
-                img / 255., (w // 2, h // 2), interpolation=cv2.INTER_LINEAR)
+            img = imresize(img / 255., scale=0.5, antialiasing=True)
             img = img * 255.
 
     distparam = np.concatenate(distparam, axis=1)
