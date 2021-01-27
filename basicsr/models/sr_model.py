@@ -114,7 +114,7 @@ class SRModel(BaseModel):
     def test(self):
         self.net_g.eval()
         with torch.no_grad():
-            self.output = self.net_g(self.lq)
+            self.output = self.net_g(self.lq)[:,0:3,:,:] # keep first stage is real output
         self.net_g.train()
 
     def dist_validation(self, dataloader, current_iter, tb_logger, save_img):

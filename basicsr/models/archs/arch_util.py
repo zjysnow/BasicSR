@@ -255,3 +255,77 @@ class DCNv2Pack(ModulatedDeformConvPack):
         return modulated_deform_conv(x, offset, mask, self.weight, self.bias,
                                      self.stride, self.padding, self.dilation,
                                      self.groups, self.deformable_groups)
+
+
+class UBlock(nn.Module):
+    def __init__(self, num_feat=64):
+        super(UBlock, self).__init__()
+        # downsample
+        self.resblock_d1 = ResidualBlockNoBN(num_feat)
+        self.down1 = nn.Conv2d(num_feat, 2*num_feat, 3,2,1) # 64 -> 128, 112 -> 56
+
+        self.resblock_d2 = ResidualBlockNoBN(2*num_feat)
+        self.down2 = nn.Conv2d(2*num_feat, 4*num_feat,3,2,1) # 128 -> 256, 56->28
+
+        self.resblock_d3 = ResidualBlockNoBN(4*num_feat)
+        self.down3 = nn.Conv2d(4*num_feat, 8*num_feat, 3,2,1) #  256->512, 28->14
+
+        self.resblock_d4 = ResidualBlockNoBN(8*num_feat)
+        self.down4 = nn.Conv2d(8*num_feat, 16*num_feat,3,2,1) # 512->1024, 14->7
+
+        # upasample
+        self.up4 = nn.Conv2d(16*num_feat, 32*num_feat, 3,1,1) # 1024 -> (2048/4)=512, 7 -> 14
+        self.resblock_u4 = ResidualBlockNoBN(8*num_feat) 
+
+        self.up3 = nn.Conv2d(8*num_feat, 16*num_feat,3,1,1) # 512 -> (1024/4)=256, 14 -> 28
+        self.resblock_u3 = ResidualBlockNoBN(4*num_feat)
+
+        self.up2 = nn.Conv2d(4*num_feat, 8*num_feat,3,1,1) # 256 -> (512/4)=128, 28->56
+        self.resblock_u2 = ResidualBlockNoBN(2*num_feat)
+
+        self.up1 = nn.Conv2d(2*num_feat, 4*num_feat,3,1,1) # 128 -> (256/4)=64, 56->112
+        self.resblock_u1 = ResidualBlockNoBN(num_feat)
+
+        # output
+        self.out1 = nn.Conv2d(num_feat, 3, 3,1,1)
+        self.out2 = nn.Conv2d(2*num_feat, 3, 3,1,1)
+        self.out3 = nn.Conv2d(4*num_feat, 3, 3,1,1)
+        self.out4 = nn.Conv2d(8*num_feat, 3, 3,1,1)
+
+        # pixel shuffle
+        self.pixel_shuffle = nn.PixelShuffle(2)
+
+        # activation function
+        self.lrelu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
+
+    def forward(self, x):
+
+        x = self.resblock_d1(x) # 64, 112
+        x = self.lrelu(self.down1(x)) # 128, 56
+
+        x = self.resblock_d2(x) # 128, 56
+        x = self.lrelu(self.down2(x)) # 256, 28
+
+        x = self.resblock_d3(x) # 256, 28
+        x = self.lrelu(self.down3(x)) # 512, 14
+
+        x = self.resblock_d4(x) # 512, 14
+        x = self.lrelu(self.down4(x)) # 1024, 7
+
+        x = self.lrelu(self.pixel_shuffle(self.up4(x))) # 512, 14
+        x = self.resblock_u4(x) # 512, 14
+        o4 = self.out4(x)
+        
+        x = self.lrelu(self.pixel_shuffle(self.up3(x))) # 256, 28
+        x = self.resblock_u3(x) # 256, 28
+        o3 = self.out3(x)
+
+        x = self.lrelu(self.pixel_shuffle(self.up2(x))) # 128, 56
+        x = self.resblock_u2(x) # 128, 56
+        o2 = self.out2(x)
+
+        x = self.lrelu(self.pixel_shuffle(self.up1(x))) # 64, 112
+        x = self.resblock_u1(x) # 64, 112
+        o1 = self.out1(x)
+
+        return x, o1, o2, o3, o4
